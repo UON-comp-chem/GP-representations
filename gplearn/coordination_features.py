@@ -2,19 +2,13 @@
 # coding: utf-8
 # GNU Lesser General Public License v3.0
 
-"""
-This source code is licensed under the GNU Lesser General Public License v3.0
-found in the LICENSE file in the root directory of this source tree.
+'''
+This submodule contains various classes that turn fingerprints
+(formatted in dictionaries/JSONs/documents) into numeric vectors
+so that they can be fed into regression pipelines.
+'''
 
----
-This code borrows heavily from
-https://github.com/ulissigroup/GASpy_regressions/blob/master/gaspy_regress/fingerprinters.py
----
-
-"""
-
-
-__author__ = ''
+__author__ = 'Kevin Tran'
 __email__ = 'ktran@andrew.cmu.edu'
 
 from collections import defaultdict
@@ -30,6 +24,9 @@ from pymatgen.ext.matproj import MPRester
 from .defaults import get_median_energies, group, period
 from ase.data import atomic_numbers as anumbers
 
+
+#from gaspy.utils import read_rc
+#from gaspy.gasdb import get_catalog_docs
 
 CACHE_LOCATION = "../data/"
 
@@ -129,32 +126,50 @@ class Fingerprinter(ABC, BaseEstimator, TransformerMixin):
         for element in set(shell_atoms):
             rep = []
             element_data = self.mendeleev_data_[element]
-            for feature in self.features:
+            for feature in self.features: 
                 if feature == 'electronegativity':
-                    v = element_data.electronegativity(scale='pauling')
-                    rep.append(v)
-                elif feature == 'median_energy':
                     try:
-                        median_energies_by_element = self.median_adsorption_energies_[adsorbate]
-                        try:
-                            median_energy = median_energies_by_element[element]
-                        except KeyError:
-                            raise RuntimeError('You did not initialize the '
-                                               'fingerprinter with the %s element, and '
-                                               'so we cannot make predictions on it.'
-                                               % element)
-                    except KeyError:
-                        raise RuntimeError('You did not initialize the fingerprinter '
-                                           'with the %s adsorbate, and so we cannot make'
-                                           'predictions on it.' % adsorbate)
-
-                    rep.append(median_energy)
+                        v = float(element_data.electronegativity(scale='pauling'))
+                    except:
+                        v = self.dummy_fp_by_group[feature][int(element_data.group_id)]   
+                elif feature == 'median_energy':
+                    median_energies_by_element = self.median_adsorption_energies_[adsorbate]
+                    try:
+                        v = median_energies_by_element[element]
+                    except:
+                        v = self.dummy_fp_by_group[feature][int(element_data.group_id)]  
+                elif feature[:14] == 'median_energy_':
+                    ads = feature[-1]
+                    assert ads in ["H", 'O', 'N', 'C', 'S']
+                    me_by_element = get_median_energies(ads)
+                    try:
+                        v = me_by_element[element]
+                    except:
+                        v = self.dummy_fp_by_group[feature][int(element_data.group_id)]
                 elif feature == 'count':
-                    count = shell_atoms.count(element)
-                    rep.append(count)
+                    v = shell_atoms.count(element)
+                elif feature == 'count^2':
+                    v = int(shell_atoms.count(element))**2
+
+                elif feature == "lattice_structure":
+                    try:
+                        _v = getattr(element_data, feature)
+                        v = {"FCC":0, 
+                             "BCC":1, 
+                             "RHL":2, 
+                             "HEX":3, 
+                             "ORC":4, 
+                             "TET":5, 
+                             "CUB":6}[_v]
+                    except:
+                        v = self.dummy_fp_by_group[feature][int(element_data.group_id)]
                 else:
-                    v = getattr(element_data, feature)
-                    rep.append(v)
+                    try:
+                        v = float(getattr(element_data, feature))
+                    except:
+                        v = self.dummy_fp_by_group[feature][int(element_data.group_id)]
+                
+                rep.append(v)
             rep = tuple(rep)
             fingerprint.append(rep)
         
@@ -196,6 +211,7 @@ class Fingerprinter(ABC, BaseEstimator, TransformerMixin):
         self._get_mendeleev_data()
         self._calculate_median_adsorption_energies()
         elements = self.elements_
+        adsorbate = self.adsorbate
 
         # Calculate `dummy_fp_` elements that are element-based
         dummy_count = 0
@@ -204,29 +220,83 @@ class Fingerprinter(ABC, BaseEstimator, TransformerMixin):
         self.dummy_fp_ = {}
         temp_dict = {}
         for feature in self.features:
+            temp_dict[feature] = defaultdict(list) 
             if feature == 'electronegativity':
-                    v = np.average([self.mendeleev_data_[element].electronegativity(scale='pauling')
-                                     for element in elements])
-                    temp_dict[feature] = v
+                for ele in elements:
+                    group = int(self.mendeleev_data_[element].group_id)
+                    v = self.mendeleev_data_[element].electronegativity(scale='pauling')
+                    temp_dict[feature][group].append(v)
             elif feature == 'median_energy':
+                median_energies_by_element = self.median_adsorption_energies_[adsorbate]
+                for ele in elements:
+                    group = int(self.mendeleev_data_[element].group_id)
+                    try:
+                        v = median_energies_by_element[ele]
+                        temp_dict[feature][group].append(v)
+                    except:
+                        print('Did not get {} for element {}, '
+                              'Use average value of the same group'.format(feature,element))    
+            elif feature[:14] == 'median_energy_':
+                ads = feature[-1]
+                assert ads in ["H", 'O', 'N', 'C', 'S']
+                me_by_element = get_median_energies(ads)
+                for ele in elements:
+                    group = int(self.mendeleev_data_[element].group_id)
+                    try:
+                        v = me_by_element[ele]
+                        temp_dict[feature][group].append(v)
+                    except:
+                        print('Did not get {} for element {}, '
+                              'Use average value of the same group'.format(feature,element))    
+            elif feature == "lattice_structure":
+                _data = []
+                for element in elements:
+                    group = int(self.mendeleev_data_[element].group_id)
+                    try:
+                        element_data = self.mendeleev_data_[element]
+                        _v = getattr(element_data, feature)
+                        v = {"FCC":0, "BCC":1,  "RHL":2, 
+                              "HEX":3, "ORC":4, "TET":5, "CUB":6}[_v]
+                        temp_dict[feature][group].append(v)
+                    except:
+                        print('Did not get {} for element {}, '
+                              'Use average value of the same group'.format(feature,element))    
+            elif feature == "count":
                 pass
-            elif feature == 'count':
-                count = 0
-                temp_dict[feature]  = count
+            elif feature == 'count^2':
+                pass
             else:
-                avg = np.average([[getattr(self.mendeleev_data_[element], feature)
-                                     for element in elements]])
-                temp_dict[feature]  = avg
-                
+                _data = []
+                for element in elements:
+                    group = int(self.mendeleev_data_[element].group_id)
+                    try:
+                        v = float(getattr(self.mendeleev_data_[element], feature))
+                        temp_dict[feature][group].append(v)
+                    except:
+                        print('Did not get {} for element {}, '
+                              'Use average value of the same group'.format(feature,element))    
         for adsorbate, median_energies_by_element in self.median_adsorption_energies_.items():
             self.dummy_fp_[adsorbate] = []
             for feature in self.features:
                 if feature == 'median_energy':
                     energies = list(median_energies_by_element.values())
                     self.dummy_fp_[adsorbate].append(np.mean(energies))
+                elif feature == "count":
+                    self.dummy_fp_[adsorbate].append(0.)
+                elif feature == "count^2":
+                    self.dummy_fp_[adsorbate].append(0.)
                 else:
-                    self.dummy_fp_[adsorbate].append(temp_dict[feature])
+                    self.dummy_fp_[adsorbate].append(
+                        np.mean(
+                            [n for m in list(temp_dict[feature].values()) for n in m]))
+                
             self.dummy_fp_[adsorbate] = tuple(self.dummy_fp_[adsorbate])
+        for feat in temp_dict.keys():
+            values = temp_dict[feat]
+            for group in values.keys():
+                temp_dict[feat][group] = np.mean(temp_dict[feat][group])
+        self.dummy_fp_by_group = temp_dict        
+
 
 
 
@@ -260,6 +330,14 @@ class Fingerprinter(ABC, BaseEstimator, TransformerMixin):
             mpids = np.unique([n['mpid'] for n in self.adsorption_docs])
             compositions_by_mpid_ = {}
             for mpid in mpids:
+                if mpid not in compositions_by_mpid.keys():
+                    with MPRester("LuaCJfKeRNDBkwI6") as rester:
+                        entry = rester.get_entry_by_material_id({'task_ids': 'mp-1186016'})
+                        composition = entry.as_dict()['composition']
+                        compositions_by_mpid_[mpid] = list(composition.keys())
+                        compositions_by_mpid[mpid] = compositions_by_mpid_[mpid]
+                        with open(CACHE_LOCATION + 'mp_comp_data.pkl', 'wb') as file_handle:
+                            pickle.dump(compositions_by_mpid, file_handle)
                 compositions_by_mpid_[mpid] = compositions_by_mpid[mpid]
         self.compositions_by_mpid_ = compositions_by_mpid_
 

@@ -1,10 +1,11 @@
 # GP-representations
 Scripts used to generate group and period-based Coordination Atom Fingerprints and FCHL19 representations (GP-CAF and GP-FCHL19).
+
 As this is an improvement based on 
 [Coordination Atom Fingerprints](https://doi.org/10.1038/s41929-018-0142-1) and 
 [FCHL19](https://aip.scitation.org/doi/abs/10.1063/1.5126701). 
 
-It contains lots code from the repos of above publications, which are
+It contains lots of code from the repos of above publications, which are
 
 [GASpy](https://github.com/ulissigroup/GASpy),
 [GASpy_regressions](https://github.com/ulissigroup/GASpy_regressions),
