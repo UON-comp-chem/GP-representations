@@ -1,0 +1,7 @@
+channels:
+  - conda-forge
+  - anaconda
+dependencies:
+  - pymatgen=2019.11.11=py37hc9558a2_0
+  - scikit-learn=0.22.1=py37hd81dba3_0
+  - xgboost=0.90=py37he1b5a44_4
