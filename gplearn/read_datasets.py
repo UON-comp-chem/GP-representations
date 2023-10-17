@@ -167,3 +167,6 @@ def remove_non_interaction(data,adsorbate = 'H',upperbound = 1.15,radius=12.0,nn
             continue # no binding site.
         new_data.append(datum)
     return new_data
+
+def make_initial_atoms_from_doc(doc):
+    return make_atoms_from_doc(doc['initial_configuration'])
